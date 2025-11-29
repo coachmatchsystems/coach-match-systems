@@ -4,9 +4,9 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Coach Match Systems - Connecting Expertise with Ambition</title>
-    <!-- Load Tailwind CSS -->
+    <!-- Load Tailwind CSS for beautiful styling -->
     <script src="https://cdn.tailwindcss.com"></script>
-    <!-- Load Lucide Icons -->
+    <!-- Load Lucide Icons for nice visual elements -->
     <script src="https://unpkg.com/lucide@latest"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&display=swap" rel="stylesheet">
     <style>
@@ -16,7 +16,7 @@
             scroll-behavior: smooth;
             background-color: #f7f9fb;
         }
-        /* Style for the fixed message box */
+        /* Style for the fixed message box (used instead of alert()) */
         #message-box {
             position: fixed;
             top: 1rem;
@@ -31,17 +31,55 @@
 </head>
 <body>
 
-    <!-- Notification/Message Box (Used instead of alert) -->
+    <!-- Notification/Message Box -->
     <div id="message-box" class="bg-green-500 text-white"></div>
 
-    <!-- JavaScript for form submission handling and message display -->
-    <script>
-        // Function to display a success message
-        function showMessage(message, type = 'success') {
+    <!-- Firebase Imports and Setup (All JavaScript is contained here) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, collection, addDoc, setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        
+        // Use a debug log level to help with troubleshooting
+        setLogLevel('Debug');
+
+        // --- Global Variables (Provided by Canvas Environment) ---
+        // Your unique application identifier
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = JSON.parse(typeof __firebase_config !== 'undefined' ? __firebase_config : '{}');
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // --- Firebase Initialization ---
+        let db;
+        let auth;
+        let isAuthReady = false;
+
+        async function initFirebase() {
+            try {
+                const app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+
+                // Authenticate user (necessary to write data to Firestore)
+                if (initialAuthToken) {
+                    await signInWithCustomToken(auth, initialAuthToken);
+                } else {
+                    await signInAnonymously(auth);
+                }
+                isAuthReady = true;
+                console.log("Firebase initialized and user authenticated.");
+            } catch (error) {
+                console.error("Error initializing Firebase:", error);
+                isAuthReady = false;
+            }
+        }
+
+        // --- Message Display Function ---
+        // Displays a temporary message on the screen instead of using alert()
+        window.showMessage = function(message, type = 'success') {
             const msgBox = document.getElementById('message-box');
             msgBox.textContent = message;
 
-            // Apply colors based on type
             msgBox.classList.remove('bg-green-500', 'bg-red-500');
             if (type === 'success') {
                 msgBox.classList.add('bg-green-500');
@@ -57,45 +95,69 @@
             }, 3000);
         }
 
-        // Simulate form submission
-        function handleFormSubmission(event) {
-            event.preventDefault(); // Prevent actual form submission
+        // --- Form Submission Handler (The core saving logic) ---
+        window.handleFormSubmission = async function(event) {
+            event.preventDefault(); // Stop the form from causing a page refresh
             
             const form = event.target;
             const role = form.querySelector('input[name="role"]').value;
             const email = form.querySelector('input[name="email"]').value;
             
-            if (email && email.includes('@')) {
-                // In a real application, you would send this data to a server (e.g., Firebase Firestore)
-                // For now, we simulate success.
-                console.log(`Lead captured: Role=${role}, Email=${email}`);
-                showMessage(`Thank you! Your interest as a ${role} has been recorded.`);
-                form.reset();
-            } else {
-                showMessage('Please enter a valid email address.', 'error');
+            // Basic validation check
+            if (!email || !email.includes('@')) {
+                window.showMessage('Please enter a valid email address.', 'error');
+                return;
+            }
+
+            // Check if Firebase is ready before sending data
+            if (!isAuthReady || !db) {
+                window.showMessage('System is still connecting. Please try again in a moment.', 'error');
+                return;
+            }
+
+            try {
+                // Defines the secure, public path for saving the waitlist emails
+                const collectionPath = `/artifacts/${appId}/public/data/waitlist_leads`;
+                
+                // Saves the data to Firestore
+                await addDoc(collection(db, collectionPath), {
+                    email: email,
+                    role: role,
+                    timestamp: new Date().toISOString(),
+                    userId: auth.currentUser?.uid || 'anonymous'
+                });
+
+                console.log(`Lead saved to Firestore: Role=${role}, Email=${email}`);
+                window.showMessage(`Success! Your interest as a ${role} has been recorded.`);
+                form.reset(); // Clear the form
+            } catch (e) {
+                console.error("Error adding document to Firestore: ", e);
+                window.showMessage('Error saving lead. Please try again later.', 'error');
             }
         }
 
-        // Attach event listeners to the forms
+        // --- Initialization and Event Listeners ---
         document.addEventListener('DOMContentLoaded', () => {
-            document.getElementById('coach-form').addEventListener('submit', handleFormSubmission);
-            document.getElementById('client-form').addEventListener('submit', handleFormSubmission);
+            initFirebase();
+            // Connects the Coach and Client forms to the saving function
+            document.getElementById('coach-form').addEventListener('submit', window.handleFormSubmission);
+            document.getElementById('client-form').addEventListener('submit', window.handleFormSubmission);
         });
 
-        // Disable right-click to discourage easy saving or viewing source code
+        // Disable right-click for a better user experience
         document.addEventListener('contextmenu', event => event.preventDefault());
 
     </script>
 
     <!-- Header & Navigation -->
     <header class="sticky top-0 z-50 bg-white shadow-md">
-        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div class="max-w-7xl mx-auto py-4 px-4 sm:px-6 lg:px-8">
             <div class="flex justify-between items-center h-16">
                 <!-- Logo -->
                 <a href="#" class="flex items-center space-x-2">
                     <span class="text-2xl font-extrabold text-indigo-600 tracking-tight">Coach Match Systems</span>
                 </a>
-                <!-- Navigation Links (Hidden on small screens, shown as menu icon) -->
+                <!-- Navigation Links -->
                 <nav class="hidden md:block space-x-8">
                     <a href="#coaches" class="text-gray-600 hover:text-indigo-600 transition duration-150 ease-in-out font-medium">For Coaches</a>
                     <a href="#clients" class="text-gray-600 hover:text-indigo-600 transition duration-150 ease-in-out font-medium">For Clients</a>
@@ -264,19 +326,21 @@
     <footer class="bg-gray-800">
         <div class="max-w-7xl mx-auto py-8 px-4 sm:px-6 lg:px-8">
             <div class="flex flex-wrap justify-between items-center border-t border-gray-700 pt-6">
-                <!-- Updated Copyright for professionalism: bolded company name -->
+                <!-- Copyright -->
                 <p class="text-base text-gray-400">&copy; 2025 <strong class="text-gray-300">Coach Match Systems</strong>. All rights reserved.</p>
                 <div class="flex space-x-6">
                     <a href="#coaches" class="text-gray-400 hover:text-indigo-400 text-sm">Coaches</a>
                     <a href="#clients" class="text-gray-400 hover:text-indigo-400 text-sm">Clients</a>
-                    <a href="mailto:hello@coachmatchsystems.com" class="text-gray-400 hover:text-indigo-400 text-sm">Contact Us</a>
-                    <a href="#" class="text-gray-400 hover:text-indigo-400 text-sm">Privacy Policy</a>
+                    <!-- Direct link to your preferred email address -->
+                    <a href="mailto:coachmatchsystems@gmail.com" class="text-gray-400 hover:text-indigo-400 text-sm">Contact Us</a>
+                    <!-- Link to the legal document you created -->
+                    <a href="privacy_policy.md" class="text-gray-400 hover:text-indigo-400 text-sm">Privacy Policy</a>
                 </div>
             </div>
         </div>
     </footer>
 
-    <!-- Initialize Lucide icons -->
+    <!-- Initialize Lucide icons on the page -->
     <script>
         lucide.createIcons();
     </script>
